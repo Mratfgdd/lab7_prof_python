@@ -1,0 +1,121 @@
+{
+  "1_sql_injection": {
+    "payload": "PI-21' OR '1'='1",
+    "unsafe_sql": "SELECT s.last_name FROM students s JOIN groups g ON g.id = s.group_id WHERE g.name = 'PI-21' OR '1'='1'",
+    "total_students": 9,
+    "unsafe_rows": 9,
+    "safe_rows": 0
+  },
+  "2_foreign_keys": {
+    "orphans_after_insert_without_pragma": 1,
+    "insert_with_pragma": "IntegrityError: FOREIGN KEY constraint failed",
+    "students_left_without_pragma": 9,
+    "orphans_without_pragma": 3,
+    "students_left_with_pragma": 6
+  },
+  "3_atomicity": {
+    "ids": [
+      1,
+      2,
+      3,
+      777,
+      5
+    ],
+    "existing": [
+      1,
+      2,
+      3,
+      5
+    ],
+    "missing": 777,
+    "error": "студента з id=777 не знайдено",
+    "naive_commit_per_student": 3,
+    "dbapi_commit_rollback": 0,
+    "transfer_students": 0
+  },
+  "4_durability": {
+    "start": 95.0,
+    "new": 50.0,
+    "commit": {
+      "exit_code": 1,
+      "grade_after_restart": 50.0
+    },
+    "flush": {
+      "exit_code": 1,
+      "grade_after_restart": 95.0
+    }
+  },
+  "5_n_plus_one": {
+    "groups": 300,
+    "students": 3000,
+    "lazy": {
+      "queries": 301,
+      "students_counted": 3000,
+      "seconds": 0.0639
+    },
+    "selectinload": {
+      "queries": 2,
+      "students_counted": 3000,
+      "seconds": 0.0131
+    },
+    "group_by": {
+      "queries": 1,
+      "students_counted": 3000,
+      "seconds": 0.0013
+    }
+  },
+  "6_migration_with_data": {
+    "rows_before": 1000,
+    "rows_after": 1000,
+    "null_emails": 1000,
+    "duplicate_email": "IntegrityError: UNIQUE constraint failed: students.email"
+  },
+  "7_failed_migration": {
+    "error": "помилка посередині міграції",
+    "project_env": {
+      "version_after": "0002",
+      "tables": [
+        "alembic_version",
+        "groups",
+        "students"
+      ],
+      "note_column_left": false
+    },
+    "plain_env": {
+      "version_after": "0002",
+      "tables": [
+        "alembic_version",
+        "groups",
+        "students"
+      ],
+      "note_column_left": true
+    }
+  },
+  "8_commit_cost": {
+    "operations": 300,
+    "repeats": 3,
+    "seconds": {
+      "commit_each": 1.317,
+      "one_transaction": 0.075
+    },
+    "ratio": 17.6
+  },
+  "9_index_and_aggregate": {
+    "rows": 100000,
+    "lookups": 200,
+    "with_index": {
+      "plan": "SEARCH students USING COVERING INDEX ix_students_last_name (last_name=?)",
+      "seconds": 0.007
+    },
+    "without_index": {
+      "plan": "SCAN students",
+      "seconds": 1.0953
+    },
+    "average": {
+      "sql_value": 69.9417,
+      "python_value": 69.9417,
+      "sql_seconds": 0.0058,
+      "python_seconds": 0.6361
+    }
+  }
+}

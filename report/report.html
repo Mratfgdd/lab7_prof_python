@@ -1,0 +1,460 @@
+<!doctype html><html lang='uk'><head><meta charset='utf-8'><title>Звіт ЛР7</title><style>
+@page { size: A4; margin: 20mm 15mm 20mm 30mm;
+  @bottom-center { content: counter(page); font: 12pt "Times New Roman", serif; } }
+@page :first { @bottom-center { content: none; } }
+html { background: #fff; }
+body { margin: 0; color: #000; background: #fff; font-family: "Times New Roman", serif;
+  font-size: 14pt; line-height: 1.22; }
+p { margin: 0 0 2pt; text-indent: 1.25cm; text-align: justify; }
+h1 { font-size: 14pt; text-align: center; margin: 8pt 0 3pt; break-after: avoid; }
+code { font-family: Consolas, "Courier New", monospace; font-size: 0.8em; }
+pre.code { font-family: Consolas, "Courier New", monospace; font-size: 7.4pt;
+  line-height: 1.1; margin: 2pt 0 4pt; padding: 3pt 8pt; white-space: pre-wrap;
+  background: #f6f6f4; border-left: 3px solid #c3c2b7; orphans: 4; widows: 4; }
+pre.keep { break-inside: avoid; }
+.term { font-family: Consolas, "Courier New", monospace; font-size: 6.9pt; line-height: 1.12;
+  white-space: pre-wrap; background: #0c0c0c; color: #d4d4d4; padding: 4pt 8pt;
+  border-radius: 4px; margin: 2pt 0 3pt; break-inside: avoid; }
+.term .ps { color: #f9f1a5; }
+.term.split { break-inside: auto; orphans: 8; widows: 8; }
+table { width: 100%; border-collapse: collapse; font-size: 10pt; line-height: 1.12;
+  margin: 2pt 0 4pt; }
+th, td { border: 1px solid #000; padding: 1.5pt 4pt; vertical-align: top; text-align: left; }
+th { background: #f0efec; }
+tr { break-inside: avoid; }
+.tcap { text-indent: 0; text-align: left; margin: 4pt 0 2pt; break-after: avoid; }
+.fcap { text-indent: 0; text-align: center; margin: 1pt 0 4pt; }
+.figure { break-inside: avoid; margin-top: 3pt; }
+.title { height: 255mm; display: flex; flex-direction: column; justify-content: space-between;
+  text-align: center; break-after: page; line-height: 1.5; }
+.title .main { margin-top: 30mm; }
+.title .main .big { font-size: 20pt; font-weight: bold; letter-spacing: 2pt; }
+.title .main .theme { font-size: 16pt; font-weight: bold; margin-top: 10pt; }
+.title .sign { align-self: flex-end; text-align: left; width: 85mm; margin-top: 30mm; }
+.title .city { margin-top: auto; }
+</style></head><body>
+<section class="title">
+  <div>МІНІСТЕРСТВО ОСВІТИ І НАУКИ УКРАЇНИ<br>
+  Львівський національний університет імені Івана Франка</div>
+  <div class="main">
+    <div class="big">ЗВІТ</div>
+    <div>до лабораторної роботи №7</div>
+    <div>з дисципліни «Професійний Python»</div>
+    <div class="theme">Тема: «Робота з базами даних у Python»</div>
+  </div>
+  <div class="sign">Виконав:<br>студент Левандівський Назар<br><br>
+  Перевірив:<br>Куньо Іван Михайлович</div>
+  <div class="city">Львів – 2026</div>
+</section>
+<h1>Мета роботи</h1>
+<p>Ознайомитися з організацією шару зберігання даних у Python-застосунках: реляційна СУБД SQLite, мова SQL, стандарт DB-API, параметризовані запити, CRUD, транзакції та властивості ACID, Repository Pattern, SQLAlchemy ORM і міграції Alembic. Інтегрувати persistence layer у проєкт студентів і перевірити його integration tests на окремій тестовій базі.</p>
+<h1>1. Постановка задачі та структура проєкту</h1>
+<p><b>Варіант 1. Система обліку студентів.</b> Предметну область ЛР1 збережено: студент має ім'я, прізвище, групу та середній бал (0–100). Потрібно: пов'язані таблиці <code>groups</code> і <code>students</code> (one-to-many), <code>StudentRepository</code> і <code>GroupRepository</code>; функції ЛР1 (додавання й виведення, пошук за прізвищем і групою, найкращий студент, середній бал групи) плюс зміна бала, переведення між групами та видалення; параметризований пошук за групою через DB-API; транзакція масового переведення з commit/rollback; міграція, що додає <code>email</code>; integration tests. Архітектура: CLI → <code>StudentService</code> → репозиторії → SQLAlchemy ORM → SQLite; <code>dbapi.py</code> працює з SQLite напряму через <code>sqlite3</code>.</p>
+<pre class="code keep">Lab_07/
+├── pyproject.toml        залежності: sqlalchemy, alembic; [test]/[dev]: pytest, pytest-cov, mypy, ruff
+├── alembic.ini           конфігурація Alembic
+├── migrations/           env.py; versions/0001_create_groups_and_students.py, 0002_add_student_email.py
+├── src/student_manager/
+│   ├── database.py       engine, PRAGMA foreign_keys = ON, фабрика сесій
+│   ├── models.py         ORM-моделі Group і Student, перевірка полів (validates)
+│   ├── repositories.py   Generic Repository; GroupRepository, StudentRepository
+│   ├── services.py       StudentService, транзакція transfer_students
+│   ├── dbapi.py          пошук студентів групи через sqlite3 (DB-API)
+│   ├── validation.py     правила для імені, групи, балу, email; exceptions.py
+│   └── main.py           CLI student-manager
+├── tests/                conftest.py + 10 модулів integration tests (212 тестів)
+├── experiments/          run_experiments.py -&gt; results/experiments.json
+└── tools/sql.py          SQL-консоль для SQLite (утиліти sqlite3 у Windows немає)</pre>
+<h1>2. Схема бази даних</h1>
+<div class="figure"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 548 199.5" width="100%" role="img" aria-label="ER-діаграма"><style>text{font-family:Consolas,'Courier New',monospace;fill:#1a1a18}.nm{font:bold 13px 'Times New Roman',serif;text-anchor:middle}.mk{font-size:9px;fill:#1f5f8b;font-weight:bold}.cl{font-size:10.5px}.tp{font-size:9.5px;fill:#5f5e5a;text-anchor:end}.ck{font-size:8.6px;fill:#5f5e5a}.rl{font:italic 10.5px 'Times New Roman',serif;fill:#1f5f8b;text-anchor:middle}</style><rect x="4" y="6" width="235" height="79.5" rx="3" fill="#fff" stroke="#3d3d3a" stroke-width="1.1"/><rect x="4" y="6" width="235" height="24" rx="3" fill="#eceae4" stroke="#3d3d3a" stroke-width="1.1"/><text x="121.5" y="22" class="nm">groups</text><text x="9" y="43" class="mk">PK</text><text x="36" y="43" class="cl" font-weight="bold">id</text><text x="234" y="43" class="tp">INTEGER</text><text x="9" y="59" class="mk">UQ</text><text x="36" y="59" class="cl">name</text><text x="234" y="59" class="tp">VARCHAR(50)</text><line x1="4" y1="67" x2="239" y2="67" stroke="#3d3d3a" stroke-width="0.6" stroke-dasharray="3 2"/><text x="9" y="78.0" class="ck" xml:space="preserve">CHECK length(trim(name)) &gt; 0</text><rect x="309" y="6" width="235" height="189.5" rx="3" fill="#fff" stroke="#3d3d3a" stroke-width="1.1"/><rect x="309" y="6" width="235" height="24" rx="3" fill="#eceae4" stroke="#3d3d3a" stroke-width="1.1"/><text x="426.5" y="22" class="nm">students</text><text x="314" y="43" class="mk">PK</text><text x="341" y="43" class="cl" font-weight="bold">id</text><text x="539" y="43" class="tp">INTEGER</text><text x="314" y="59" class="mk"></text><text x="341" y="59" class="cl">first_name</text><text x="539" y="59" class="tp">VARCHAR(100)</text><text x="314" y="75" class="mk"></text><text x="341" y="75" class="cl">last_name</text><text x="539" y="75" class="tp">VARCHAR(100)</text><text x="314" y="91" class="mk"></text><text x="341" y="91" class="cl">average_grade</text><text x="539" y="91" class="tp">FLOAT</text><text x="314" y="107" class="mk">FK</text><text x="341" y="107" class="cl">group_id</text><text x="539" y="107" class="tp">INTEGER</text><text x="314" y="123" class="mk">UQ</text><text x="341" y="123" class="cl">email</text><text x="539" y="123" class="tp">VARCHAR(255)</text><line x1="309" y1="131" x2="544" y2="131" stroke="#3d3d3a" stroke-width="0.6" stroke-dasharray="3 2"/><text x="314" y="142.0" class="ck" xml:space="preserve">CHECK email IS NULL OR email LIKE &#x27;%_@_%._%&#x27;</text><text x="314" y="153.5" class="ck" xml:space="preserve">CHECK average_grade &gt;= 0 AND average_grade &lt;=</text><text x="314" y="165.0" class="ck" xml:space="preserve">  100</text><text x="314" y="176.5" class="ck" xml:space="preserve">CHECK length(trim(first_name)) &gt; 0 AND</text><text x="314" y="188.0" class="ck" xml:space="preserve">  length(trim(last_name)) &gt; 0</text><path d="M239 39 H274.0 V103 H309" fill="none" stroke="#1f5f8b" stroke-width="1.3"/><path d="M246 33 V45" stroke="#1f5f8b" stroke-width="1.3"/><path d="M299 103 L309 97 M299 103 L309 109 M296 97 V109" fill="none" stroke="#1f5f8b" stroke-width="1.3"/><text x="274.0" y="33" class="rl">1 : N</text></svg><p class="fcap">Рисунок 1 – ER-діаграма (побудована з метаданих ORM-моделей); зовнішній ключ із ON DELETE CASCADE</p></div>
+<p class="tcap">Таблиця 1 – Таблиці, ключі та поля</p>
+<table><thead><tr><th>Таблиця</th><th>Ключі</th><th>Поля</th></tr></thead><tbody><tr><td><b>groups</b> – групи</td><td>PK id; UNIQUE name</td><td>name – код групи, наприклад PI-21 (CHECK: не порожнє)</td></tr><tr><td><b>students</b> – студенти</td><td>PK id; FK group_id → groups.id; UNIQUE email; індекси group_id, last_name</td><td>first_name, last_name – ім'я та прізвище (CHECK: не порожні); average_grade – середній бал (CHECK: 0…100); group_id – група; email – адреса, може бути NULL (додано міграцією 0002, CHECK: формат)</td></tr></tbody></table>
+<p>Таблиці створює міграція Alembic. DDL, яку SQLite зберігає в <code>sqlite_master</code> після <code>alembic upgrade head</code> (students перебудовано міграцією 0002, тому її назва в лапках):</p>
+<pre class="code">CREATE TABLE groups (
+  id INTEGER NOT NULL, 
+  name VARCHAR(50) NOT NULL, 
+  CONSTRAINT pk_groups PRIMARY KEY (id), 
+  CONSTRAINT ck_groups_name_not_blank CHECK (length(trim(name)) &gt; 0), 
+  CONSTRAINT uq_groups_name UNIQUE (name)
+);
+CREATE TABLE "students" (
+  id INTEGER NOT NULL, 
+  first_name VARCHAR(100) NOT NULL, 
+  last_name VARCHAR(100) NOT NULL, 
+  average_grade FLOAT NOT NULL, 
+  group_id INTEGER NOT NULL, 
+  email VARCHAR(255), 
+  CONSTRAINT pk_students PRIMARY KEY (id), 
+  CONSTRAINT fk_students_group_id_groups FOREIGN KEY(group_id) REFERENCES groups (id) ON DELETE CASCADE, 
+  CONSTRAINT ck_students_grade_in_range CHECK (average_grade &gt;= 0 AND average_grade &lt;= 100), 
+  CONSTRAINT ck_students_names_not_blank CHECK (length(trim(first_name)) &gt; 0 AND length(trim(last_name)) &gt; 0), 
+  CONSTRAINT uq_students_email UNIQUE (email), 
+  CONSTRAINT ck_students_email_format CHECK (email IS NULL OR email LIKE '%_@_%._%')
+);
+CREATE INDEX ix_students_group_id ON students (group_id);
+CREATE INDEX ix_students_last_name ON students (last_name);</pre>
+<h1>3. Підключення до БД (database.py) і ORM-моделі</h1>
+<p>SQLite за замовчуванням не перевіряє FOREIGN KEY, тому прагма вмикається для кожного нового з'єднання через подію <code>connect</code> (експеримент 2). URL береться зі змінної <code>STUDENT_MANAGER_DATABASE_URL</code> або <code>sqlite:///students.db</code>. Сесія створюється з <code>autoflush=False</code> (SQL надсилається явно) і <code>expire_on_commit=False</code> (об'єкти лишаються читабельними після commit).</p>
+<pre class="code">def make_engine(url: str | None = None, *, echo: bool = False) -&gt; Engine:
+    engine = create_engine(url or database_url(), echo=echo)
+    if engine.dialect.name == "sqlite":
+        event.listen(engine, "connect", _enable_foreign_keys)
+    return engine
+
+def _enable_foreign_keys(dbapi_connection: Any, _connection_record: Any) -&gt; None:
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA foreign_keys = ON")
+    cursor.close()
+
+def make_session_factory(engine: Engine) -&gt; sessionmaker[Session]:
+    return sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)</pre>
+<p>Моделі написано в стилі SQLAlchemy 2 (<code>Mapped</code>, <code>mapped_column</code>). <code>relationship()</code> з <code>back_populates</code> задає one-to-many; <code>cascade</code> і <code>ondelete="CASCADE"</code> – каскадне видалення. Значення перевіряються двічі: у <code>@validates</code> (до звернення до БД) і CHECK-обмеженнями (навіть якщо запис іде повз ORM).</p>
+<pre class="code">class Group(Base):
+    __tablename__ = "groups"
+    __table_args__ = (CheckConstraint("length(trim(name)) &gt; 0", name="name_not_blank"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(50), unique=True)
+
+    students: Mapped[list["Student"]] = relationship(
+        back_populates="group",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="Student.id",
+    )
+
+
+class Student(Base):
+    __tablename__ = "students"
+    __table_args__ = (
+        CheckConstraint("average_grade &gt;= 0 AND average_grade &lt;= 100", name="grade_in_range"),
+        CheckConstraint(
+            "length(trim(first_name)) &gt; 0 AND length(trim(last_name)) &gt; 0",
+            name="names_not_blank",
+        ),
+        CheckConstraint("email IS NULL OR email LIKE '%_@_%._%'", name="email_format"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    first_name: Mapped[str] = mapped_column(String(100))
+    last_name: Mapped[str] = mapped_column(String(100), index=True)
+    average_grade: Mapped[float] = mapped_column(Float)
+    group_id: Mapped[int] = mapped_column(ForeignKey("groups.id", ondelete="CASCADE"), index=True)
+    email: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True)
+
+    group: Mapped[Group] = relationship(back_populates="students")
+
+    @validates("average_grade")
+    def _validate_grade(self, _key: str, value: object) -&gt; float:
+        return clean_grade(value)</pre>
+<h1>4. Repository Pattern</h1>
+<p>Generic Repository містить CRUD, спільний для всіх моделей; конкретні репозиторії додають запити предметної області: пошук за прізвищем, фільтрацію за групою (з JOIN), пошук з фільтрами, сортуванням і пагінацією, <code>AVG</code>, <code>COUNT</code>, <code>MIN</code>/<code>MAX</code> з <code>GROUP BY</code>. Репозиторії викликають лише <code>flush()</code>, а не <code>commit()</code>: межі транзакції визначає сервіс. Фрагмент:</p>
+<pre class="code">class Repository(Generic[ModelT]):
+    model: type[ModelT]
+
+    def add(self, entity: ModelT) -&gt; ModelT:
+        self.session.add(entity)
+        self.session.flush()
+        return entity
+
+    def get_by_id(self, entity_id: int) -&gt; ModelT | None:
+        return self.session.get(self.model, entity_id)
+
+
+class StudentRepository(Repository[Student]):
+    model = Student
+
+    def find_by_last_name(self, last_name: str) -&gt; list[Student]:
+        statement = (
+            select(Student)
+            .where(Student.last_name == last_name.strip())
+            .order_by(Student.first_name, Student.id)
+        )
+        return list(self.session.scalars(statement))
+
+    def update_grade(self, student_id: int, grade: float) -&gt; Student | None:
+        student = self.get_by_id(student_id)
+        if student is None:
+            return None
+        student.average_grade = grade
+        self.session.flush()
+        return student
+
+
+class GroupRepository(Repository[Group]):
+    model = Group
+
+    def stats(self) -&gt; list[GroupStats]:
+        statement = (
+            select(
+                Group.name,
+                func.count(Student.id),
+                func.avg(Student.average_grade),
+                func.max(Student.average_grade),
+                func.min(Student.average_grade),
+            )
+            .outerjoin(Student, Student.group_id == Group.id)
+            .group_by(Group.id, Group.name)
+            .order_by(Group.name)
+        )
+        return [
+            GroupStats(
+                name,
+                int(students),
+                None if average is None else float(average),
+                None if best is None else float(best),
+                None if worst is None else float(worst),
+            )
+            for name, students, average, best, worst in self.session.execute(statement)
+        ]</pre>
+<h1>5. DB-API і параметризований запит</h1>
+<p>Пошук студентів групи виконано без ORM – через <code>sqlite3</code> (Connection → Cursor → <code>execute</code> → <code>fetchall</code>). Значення передається окремо від тексту SQL (плейсхолдер <code>?</code>), тому не може змінити структуру запиту. Рядок <code>PI-21' OR '1'='1</code>, вставлений через f-string, перетворює умову на <code>... OR '1'='1'</code> і запит повертає 9 студентів із 9; параметризований запит – 0 (експеримент 1).</p>
+<pre class="code keep">FIND_BY_GROUP = """
+    SELECT s.id, s.last_name, s.first_name, g.name, s.average_grade, s.email
+    FROM students AS s
+    JOIN groups AS g ON g.id = s.group_id
+    WHERE g.name = ?
+    ORDER BY s.last_name, s.first_name, s.id
+"""
+
+
+def find_students_by_group(database: Path | str, group_name: str) -&gt; list[StudentRow]:
+    with closing(sqlite3.connect(database)) as connection:
+        cursor = connection.cursor()
+        cursor.execute(FIND_BY_GROUP, (group_name,))
+        rows = cursor.fetchall()
+        cursor.close()
+    return [StudentRow(*row) for row in rows]</pre>
+<h1>6. CRUD і робота програми</h1>
+<p class="tcap">Таблиця 2 – CRUD-операції</p>
+<table><thead><tr><th>Операція</th><th>Методи StudentService / репозиторіїв</th><th>SQL</th></tr></thead><tbody><tr><td>Create</td><td><code>create_group</code>, <code>add_student</code></td><td>INSERT</td></tr><tr><td>Read</td><td><code>get_student</code>, <code>find_by_last_name</code>, <code>filter_by_group</code>, <code>list_students</code>, <code>get_group_average</code>, <code>get_best_student</code>, <code>group_report</code></td><td>SELECT, JOIN, AVG, COUNT, MIN, MAX, GROUP BY</td></tr><tr><td>Update</td><td><code>update_grade</code>, <code>set_email</code>, <code>transfer_students</code></td><td>UPDATE</td></tr><tr><td>Delete</td><td><code>delete_student</code>, <code>delete_group</code> (непорожню групу – лише з <code>force</code>, студенти видаляються каскадно)</td><td>DELETE</td></tr></tbody></table>
+<p>У ORM Update – це зміна атрибутів завантаженого об'єкта: сесія відстежує зміни (Unit of Work) і формує UPDATE під час flush. Сеанс роботи з CLI на новій базі (помилкові команди повертають код 1 і не змінюють даних):</p>
+<div class="term split"><span class="ps">PS C:\Github\prof_python\Lab_07&gt;</span> alembic upgrade head
+INFO  [alembic.runtime.migration] Context impl SQLiteImpl.
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+INFO  [alembic.runtime.migration] Running upgrade  -&gt; 0001
+INFO  [alembic.runtime.migration] Running upgrade 0001 -&gt; 0002
+<span class="ps">PS C:\Github\prof_python\Lab_07&gt;</span> student-manager seed
+Створено груп: 3, студентів: 9
+<span class="ps">PS C:\Github\prof_python\Lab_07&gt;</span> student-manager groups
+Група  Студентів  Середній   Макс    Мін
+PI-21          3     86.17  95.00  78.00
+PI-22          3     81.90  99.50  55.00
+PI-23          3     73.83  88.00  62.50
+<span class="ps">PS C:\Github\prof_python\Lab_07&gt;</span> student-manager students --sort average_grade --desc --limit 4
+ ID Студент              Група     Бал  Email
+  4 Бондар Ірина         PI-22   99.50  iryna.bondar@example.com
+  1 Коваленко Олена      PI-21   95.00  olena.kovalenko@example.com
+  6 Гнатишин Марта       PI-22   91.20  -
+  7 Гнатюк Софія         PI-23   88.00  -
+<span class="ps">PS C:\Github\prof_python\Lab_07&gt;</span> student-manager find Бондар
+ ID Студент              Група     Бал  Email
+  4 Бондар Ірина         PI-22   99.50  iryna.bondar@example.com
+<span class="ps">PS C:\Github\prof_python\Lab_07&gt;</span> student-manager dbapi-group PI-22
+  4 Бондар Ірина 99.50
+  6 Гнатишин Марта 91.20
+  5 Гриценко Тарас 55.00
+<span class="ps">PS C:\Github\prof_python\Lab_07&gt;</span> student-manager add Назар Левандівський PI-21 88.5 --email nazar@example.com
+Додано: 10 Левандівський Назар (PI-21, 88.5)
+<span class="ps">PS C:\Github\prof_python\Lab_07&gt;</span> student-manager grade 2 150
+Помилка: середній бал 150.0 поза діапазоном 0–100
+<span class="ps">PS C:\Github\prof_python\Lab_07&gt;</span> student-manager transfer PI-23 1 2 999
+Помилка: студента з id=999 не знайдено
+<span class="ps">PS C:\Github\prof_python\Lab_07&gt;</span> student-manager transfer PI-23 1 2
+Переведено студентів: 2 -&gt; PI-23
+<span class="ps">PS C:\Github\prof_python\Lab_07&gt;</span> student-manager groups
+Група  Студентів  Середній   Макс    Мін
+PI-21          2     87.00  88.50  85.50
+PI-22          3     81.90  99.50  55.00
+PI-23          5     78.90  95.00  62.50
+<span class="ps">PS C:\Github\prof_python\Lab_07&gt;</span> student-manager delete-group PI-23
+Помилка: у групі PI-23 є студенти: 5</div>
+<p class="fcap">Рисунок 2 – Робота програми: міграція, наповнення, пошук, DB-API, додавання, невдалі оновлення й переведення, успішне переведення, спроба видалити непорожню групу</p>
+<p>Вміст бази, переглянутий SQL-запитами:</p>
+<div class="term"><span class="ps">PS C:\Github\prof_python\Lab_07&gt;</span> python tools/sql.py students.db "SELECT s.id, s.last_name, g.name, s.average_grade FROM students s JOIN groups g ON g.id = s.group_id WHERE g.name = ? ORDER BY s.last_name" PI-23
+│ id │ last_name │ name  │ average_grade │
+├────┼───────────┼───────┼───────────────┤
+│ 7  │ Гнатюк    │ PI-23 │ 88.0          │
+│ 8  │ Дзюба     │ PI-23 │ 62.5          │
+│ 1  │ Коваленко │ PI-23 │ 95.0          │
+│ 2  │ Мельник   │ PI-23 │ 78.0          │
+│ 9  │ Шевчук    │ PI-23 │ 71.0          │
+(5 рядків)
+<span class="ps">PS C:\Github\prof_python\Lab_07&gt;</span> python tools/sql.py students.db "SELECT g.name, COUNT(s.id) AS students, ROUND(AVG(s.average_grade), 2) AS avg_grade FROM groups g LEFT JOIN students s ON s.group_id = g.id GROUP BY g.name"
+│ name  │ students │ avg_grade │
+├───────┼──────────┼───────────┤
+│ PI-21 │ 2        │ 87.0      │
+│ PI-22 │ 3        │ 81.9      │
+│ PI-23 │ 5        │ 78.9      │
+(3 рядки)</div>
+<p class="fcap">Рисунок 3 – SQL-запити до students.db: JOIN із параметром і GROUP BY з COUNT та AVG</p>
+<h1>7. Транзакція transfer_students, commit і rollback, ACID</h1>
+<p><code>transfer_students</code> переводить список студентів до іншої групи як єдине ціле. Після кожного студента виконується <code>flush()</code>, тож UPDATE справді надсилається в БД; якщо наступного студента не знайдено (або виникла помилка БД), <code>rollback()</code> скасовує вже надіслані зміни. Інші операції сервісу виконуються всередині <code>_transaction()</code> – контекстного менеджера з тією самою логікою.</p>
+<pre class="code">def transfer_students(session: Session, student_ids: Sequence[int], new_group_id: int) -&gt; int:
+    unique_ids = list(dict.fromkeys(student_ids))
+    try:
+        if not unique_ids:
+            raise StudentValidationError("список студентів для переведення порожній")
+        group = session.get(Group, new_group_id)
+        if group is None:
+            raise GroupNotFoundError(f"групу з id={new_group_id} не знайдено")
+        for student_id in unique_ids:
+            student = session.get(Student, student_id)
+            if student is None:
+                raise StudentNotFoundError(f"студента з id={student_id} не знайдено")
+            student.group = group
+            session.flush()
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    return len(unique_ids)
+
+@contextmanager
+def _transaction(self) -&gt; Iterator[None]:
+    try:
+        yield
+        self.session.commit()
+    except Exception:
+        self.session.rollback()
+        raise</pre>
+<p class="tcap">Таблиця 3 – Як реалізовано властивості ACID</p>
+<table><thead><tr><th>Властивість</th><th>Реалізація в проєкті</th><th>Перевірка</th></tr></thead><tbody><tr><td>Atomicity</td><td>одна транзакція на операцію; rollback при будь-якому винятку</td><td>експ. 3: у списку [1, 2, 3, 777, 5] немає студента 777; commit після кожного кроку лишив 3 із 4 студентів у новій групі, DB-API з rollback і transfer_students – 0</td></tr><tr><td>Consistency</td><td>CHECK, UNIQUE, FOREIGN KEY + PRAGMA; правила в @validates і сервісі</td><td>тести test_constraints; експ. 2: без прагми лишилось 3 «осиротілих» студентів після видалення групи, з прагмою – каскадне видалення</td></tr><tr><td>Isolation</td><td>незафіксовані зміни не видно іншому з'єднанню</td><td>тест test_uncommitted_transfer_is_invisible_to_another_connection: після flush інше з'єднання ще бачить стару групу</td></tr><tr><td>Durability</td><td>після commit SQLite синхронізує журнал і файл БД на диск</td><td>експ. 4: аварійне завершення процесу після commit – бал 50.0, після flush без commit – 95.0</td></tr></tbody></table>
+<h1>8. Міграції Alembic</h1>
+<p>Після <code>alembic init migrations</code> ревізії створено командами <code>alembic revision --autogenerate --rev-id 0001 -m "create groups and students"</code> і <code>... --rev-id 0002 -m "add student email"</code> (після додавання поля <code>email</code> до моделі). Autogenerate додав колонку й UNIQUE, але не порівнює CHECK-обмеження, тому формат email дописано вручну. На SQLite зміна таблиці виконується через batch («створити нову таблицю → скопіювати дані → замінити»):</p>
+<pre class="code keep">def upgrade() -&gt; None:
+    with op.batch_alter_table("students", schema=None) as batch_op:
+        batch_op.add_column(sa.Column("email", sa.String(length=255), nullable=True))
+        batch_op.create_unique_constraint(batch_op.f("uq_students_email"), ["email"])
+        batch_op.create_check_constraint(
+            op.f("ck_students_email_format"), "email IS NULL OR email LIKE '%_@_%._%'"
+        )
+
+def downgrade() -&gt; None:
+    with op.batch_alter_table("students", schema=None) as batch_op:
+        batch_op.drop_constraint(op.f("ck_students_email_format"), type_="check")
+        batch_op.drop_constraint(batch_op.f("uq_students_email"), type_="unique")
+        batch_op.drop_column("email")</pre>
+<div class="term split"><span class="ps">PS C:\Github\prof_python\Lab_07&gt;</span> alembic history
+0001 -&gt; 0002 (head), 
+&lt;base&gt; -&gt; 0001,
+<span class="ps">PS C:\Github\prof_python\Lab_07&gt;</span> python tools/sql.py students.db "SELECT last_name, email FROM students WHERE email IS NOT NULL ORDER BY id"
+│ last_name     │ email                       │
+├───────────────┼─────────────────────────────┤
+│ Коваленко     │ olena.kovalenko@example.com │
+│ Бондар        │ iryna.bondar@example.com    │
+│ Левандівський │ nazar@example.com           │
+(3 рядки)
+<span class="ps">PS C:\Github\prof_python\Lab_07&gt;</span> alembic downgrade -1
+INFO  [alembic.runtime.migration] Context impl SQLiteImpl.
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+INFO  [alembic.runtime.migration] Running downgrade 0002 -&gt; 0001
+<span class="ps">PS C:\Github\prof_python\Lab_07&gt;</span> python tools/sql.py students.db "SELECT name FROM pragma_table_info('students')"
+│ name          │
+├───────────────┤
+│ id            │
+│ first_name    │
+│ last_name     │
+│ average_grade │
+│ group_id      │
+(5 рядків)
+<span class="ps">PS C:\Github\prof_python\Lab_07&gt;</span> alembic upgrade head
+INFO  [alembic.runtime.migration] Context impl SQLiteImpl.
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+INFO  [alembic.runtime.migration] Running upgrade 0001 -&gt; 0002
+<span class="ps">PS C:\Github\prof_python\Lab_07&gt;</span> python tools/sql.py students.db "SELECT last_name, email FROM students WHERE email IS NOT NULL ORDER BY id"
+│ last_name │ email │
+├───────────┼───────┤
+(0 рядків)
+<span class="ps">PS C:\Github\prof_python\Lab_07&gt;</span> alembic current
+INFO  [alembic.runtime.migration] Context impl SQLiteImpl.
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+0002 (head)</div>
+<p class="fcap">Рисунок 4 – Історія, адреси до та після downgrade, колонки без email, повторний upgrade, поточна ревізія</p>
+<p>Результати перевірок. (1) Міграція зберігає дані: після <code>upgrade</code> усі 1000 рядків на місці, <code>email</code> дорівнює NULL; UNIQUE дозволяє багато NULL, але відхиляє дублікат (експеримент 6). (2) Downgrade видаляє колонку разом із даними: після повторного upgrade адрес немає (рисунок 4). Збіг схеми з моделями перевіряє тест <code>test_upgrade_head_creates_schema_identical_to_models</code> (те саме, що <code>alembic check</code>). (3) Batch-ревізію не можна відобразити як SQL у режимі <code>--sql</code>: потрібне живе з'єднання для reflection. (4) У <code>env.py</code> увімкнено <code>transactional_ddl</code> з явним BEGIN: штучно зламана ревізія 0003 лишила БД на 0002 без нової колонки, а зі стандартним <code>env.py</code> номер версії теж лишився 0002, але колонка <code>note</code> залишилась у таблиці – схема розійшлась із записаною версією (експеримент 7).</p>
+<h1>9. Integration tests</h1>
+<p>Тести перевіряють взаємодію Repository/Service + SQLAlchemy + SQLite на окремій тестовій БД: кожен тест отримує власний файл <code>test_students.db</code> у <code>tmp_path</code> (схема – <code>create_all</code>), тож тести незалежні й не торкаються <code>students.db</code>. Фікстура <code>query</code> читає дані окремим DB-API з'єднанням – лише те, що справді зафіксовано в БД, а не стан об'єкта в сесії. Міграції тестуються через <code>alembic.command</code> на такій самій окремій БД.</p>
+<pre class="code">@pytest.fixture
+def engine(db_path: Path) -&gt; Iterator[Engine]:
+    engine = make_engine(f"sqlite:///{db_path}")
+    Base.metadata.create_all(engine)
+    yield engine
+    engine.dispose()
+
+
+def test_database_failure_in_the_middle_rolls_back_updates_already_sent(
+    school: StudentService,
+    session: Session,
+    group_of: Callable[[int], str],
+    monkeypatch: pytest.MonkeyPatch,
+) -&gt; None:
+    target = group_id(school, "PI-23")
+    real_flush = session.flush
+    calls: list[int] = []
+
+    def failing_second_flush(*args: Any, **kwargs: Any) -&gt; None:
+        calls.append(1)
+        if len(calls) == 2:
+            raise OperationalError("UPDATE students", {}, Exception("disk I/O error"))
+        real_flush(*args, **kwargs)
+
+    monkeypatch.setattr(session, "flush", failing_second_flush)
+    with pytest.raises(OperationalError):
+        transfer_students(session, [1, 2, 3], target)
+    assert len(calls) == 2
+    assert [group_of(1), group_of(2), group_of(3)] == ["PI-21", "PI-21", "PI-22"]</pre>
+<p class="tcap">Таблиця 4 – Файли тестів</p>
+<table><thead><tr><th>Файл</th><th>Тестів</th><th>Що перевіряє</th></tr></thead><tbody><tr><td><code>test_validation.py</code></td><td>47</td><td>правила для імені, групи, балу, email</td></tr><tr><td><code>test_models.py</code></td><td>13</td><td>ORM-моделі, relationship, каскад, orphan removal</td></tr><tr><td><code>test_constraints.py</code></td><td>15</td><td>CHECK, UNIQUE, FOREIGN KEY, PRAGMA на рівні БД</td></tr><tr><td><code>test_group_repository.py</code></td><td>12</td><td>GroupRepository, агрегація по групах</td></tr><tr><td><code>test_student_repository.py</code></td><td>27</td><td>CRUD Student, пошук, filter_by_group, сортування, пагінація</td></tr><tr><td><code>test_service.py</code></td><td>40</td><td>бізнес-логіка, середній бал групи, найкращий студент, видалення</td></tr><tr><td><code>test_transactions.py</code></td><td>13</td><td>transfer_students, commit, rollback, ізоляція</td></tr><tr><td><code>test_dbapi.py</code></td><td>9</td><td>параметризований пошук через sqlite3, SQL injection</td></tr><tr><td><code>test_migrations.py</code></td><td>12</td><td>upgrade, downgrade, збереження даних, збіг схеми з моделями</td></tr><tr><td><code>test_cli.py</code></td><td>24</td><td>команди CLI, коди виходу, повідомлення про помилки</td></tr></tbody></table>
+<div class="term split"><span class="ps">PS C:\Github\prof_python\Lab_07&gt;</span> pytest -v
+============================= test session starts =============================
+platform win32 -- Python 3.12.10, pytest-9.2.0, pluggy-1.7.0 -- C:\Github\prof_python\Lab_07\.venv\Scripts\python.exe
+rootdir: C:\Github\prof_python\Lab_07
+configfile: pyproject.toml
+testpaths: tests
+plugins: cov-7.1.0
+collecting ... collected 212 items
+
+tests/test_cli.py::test_seed_creates_groups_and_students PASSED          [  0%]
+tests/test_cli.py::test_seed_twice_does_not_duplicate_data PASSED        [  0%]
+tests/test_cli.py::test_groups_report_shows_counts_and_averages PASSED   [  1%]
+... ще рядків: 204 ...
+tests/test_validation.py::test_invalid_email_is_rejected[a@b] PASSED     [ 98%]
+tests/test_validation.py::test_invalid_email_is_rejected[@b.c] PASSED    [ 98%]
+tests/test_validation.py::test_invalid_email_is_rejected[a@.c] PASSED    [ 99%]
+tests/test_validation.py::test_invalid_email_is_rejected[a b@c.d] PASSED [ 99%]
+tests/test_validation.py::test_invalid_email_is_rejected[5] PASSED       [100%]
+
+============================= 212 passed in 8.43s =============================
+<span class="ps">PS C:\Github\prof_python\Lab_07&gt;</span> pytest -q --cov=student_manager --cov-branch --cov-report=term-missing
+........................................................................ [ 33%]
+........................................................................ [ 67%]
+....................................................................     [100%]
+=============================== tests coverage ================================
+______________ coverage: platform win32, python 3.12.10-final-0 _______________
+
+Name                                  Stmts   Miss Branch BrPart  Cover   Missing
+---------------------------------------------------------------------------------
+src\student_manager\__init__.py           1      0      0      0   100%
+src\student_manager\database.py          23      0      4      1    96%   19-&gt;21
+src\student_manager\dbapi.py             20      0      0      0   100%
+src\student_manager\exceptions.py        16      0      0      0   100%
+src\student_manager\main.py             130      0     22      0   100%
+src\student_manager\models.py            40      0      0      0   100%
+src\student_manager\repositories.py      79      0     10      0   100%
+src\student_manager\services.py         120      0     24      0   100%
+src\student_manager\validation.py        33      0     14      0   100%
+---------------------------------------------------------------------------------
+TOTAL                                   462      0     74      1    99%
+Required test coverage of 90.0% reached. Total coverage: 99.81%
+212 passed in 10.19s
+<span class="ps">PS C:\Github\prof_python\Lab_07&gt;</span> mypy
+Success: no issues found in 25 source files
+<span class="ps">PS C:\Github\prof_python\Lab_07&gt;</span> ruff check .
+All checks passed!</div>
+<p class="fcap">Рисунок 5 – Результат pytest -v (212 тестів пройдено за 8.43 с; показано початок і кінець виводу з 222 рядків, пропущено 204 рядків PASSED), покриття, mypy (strict = true у pyproject.toml) і ruff</p>
+<h1>10. Експерименти</h1>
+<p class="tcap">Таблиця 5 – Результати experiments/run_experiments.py (кожен – на власній тимчасовій БД)</p>
+<table><thead><tr><th>Експеримент</th><th>Результат</th></tr></thead><tbody><tr><td>1. SQL injection</td><td>запит з f-string повернув 9 студентів із 9, параметризований – 0</td></tr><tr><td>2. FOREIGN KEY</td><td>без прагми студента з неіснуючою групою збережено (сиріт: 1), видалення групи не каскадне (3 сиріт); з прагмою – IntegrityError: FOREIGN KEY constraint failed, після видалення групи лишилось 6 студентів</td></tr><tr><td>3. Atomicity</td><td>переведення [1, 2, 3, 777, 5]: commit на кожному студенті – 3 переведено, DB-API з rollback – 0, transfer_students – 0</td></tr><tr><td>4. Durability</td><td>os._exit після commit – 50.0, після flush без commit – 95.0 (початковий бал 95.0)</td></tr><tr><td>5. N+1 запитів</td><td>300 груп, 3000 студентів: lazy loading – 301 запитів, 0.0639 с; selectinload – 2, 0.0131 с; GROUP BY – 1, 0.0013 с</td></tr><tr><td>6. Міграція з даними</td><td>1000 рядків: після upgrade 1000, email NULL – 1000; дублікат email відхилено</td></tr><tr><td>7. Збій міграції</td><td>«помилка посередині міграції»: env.py проєкту – схема без змін; стандартний env.py – колонка note залишилась при версії 0002</td></tr><tr><td>8. Вартість commit</td><td>300 оновлень: commit кожного – 1.317 с, одна транзакція – 0.075 с (у 17.6 раза швидше)</td></tr><tr><td>9. Індекс і агрегація</td><td>100 000 студентів, 200 пошуків за прізвищем: SEARCH students USING COVERING INDEX ix_students_last_name (last_name=?) – 0.007 с; SCAN students – 1.0953 с (у 156 разів повільніше). Середній бал: AVG у SQL – 0.0058 с, вибірка всіх об'єктів і середнє в Python – 0.6361 с (результат однаковий, 69.9417)</td></tr></tbody></table>
+<p>Пакетні зміни варто групувати в одну транзакцію (commit найдорожчий), але проміжні кроки однієї бізнес-операції фіксувати не можна (експеримент 3); агрегації та фільтри виконують у SQL, а зв'язані колекції завантажують разом.</p>
+<h1>Висновки</h1>
+<p>Систему обліку студентів (варіант 1) переведено на SQLite: дві пов'язані таблиці з PRIMARY KEY, FOREIGN KEY, UNIQUE і CHECK, SQLAlchemy ORM, Generic Repository, сервіс із транзакціями, пошук через DB-API та дві міграції Alembic. 212 integration тестів на окремій тестовій БД (99.81 % покриття з гілками) перевіряють CRUD, пошук, агрегацію, переведення з rollback, обмеження та міграції. Експерименти показали: FOREIGN KEY у SQLite вмикають явно, rollback захищає від часткових операцій, параметризовані запити відсікають SQL injection, а міграції SQLite потребують транзакційного DDL і перевірки згенерованого коду.</p></body></html>
